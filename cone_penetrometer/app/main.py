@@ -6,7 +6,8 @@ import os
 app = Flask(__name__, static_folder='templates')
 
 # Configure the serial port
-ser = serial.Serial('/dev/ttyS0', 9600)  # Replace '/dev/ttyS0' with the appropriate serial port for your Arduino
+# ser = serial.Serial('/dev/tty*', 9600)  # Replace '/dev/ttyS0' with the appropriate serial port for your Arduino
+ser = serial.Serial('/dev/ttyS3', 9600)
 time.sleep(2)  # Wait for the serial connection to initialize
 
 # Function to send command to Arduino and read response

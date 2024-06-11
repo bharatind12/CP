@@ -22,6 +22,7 @@ setup(
         "starlette==0.13.6",
         "aiofiles==0.8.0",
         "pyserial==3.5",
-        "Flask==2.2.2"
+        "Flask==2.2.2",
+        "werkzeug==2.2.2"
     ],
 )
