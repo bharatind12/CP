@@ -1,0 +1,147 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Simple Vue.js Form</title>
+    <script src="https://cdn.jsdelivr.net/npm/vue@2.6.14/dist/vue.js"></script>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 20px;
+        }
+        label {
+            display: block;
+            margin-top: 10px;
+        }
+        input {
+            margin-top: 5px;
+            padding: 5px;
+            width: 300px;
+        }
+        button {
+            margin-top: 20px;
+            padding: 10px 20px;
+            background-color: #007BFF;
+            color: white;
+            border: none;
+            cursor: pointer;
+        }
+        button:hover {
+            background-color: #0056b3;
+        }
+    </style>
+</head>
+<body>
+    <div id="app">
+        <form @submit.prevent="submitForm">
+            <div>
+                <label for="sessionName">Session Name:</label>
+                <input type="text" id="sessionName" v-model="sessionName" required>
+            </div>
+            <div>
+                <label for="threshold">Threshold Pressure Value:</label>
+                <input type="number" id="threshold" v-model="threshold" required>
+            </div>
+            <div>
+                <label>Number of Penetrations:</label>
+                <p>{{ numberOfPenetrations }}</p>
+            </div>
+            <div>
+                <label>Number of Turns:</label>
+                <p>{{ numberOfTurns }}</p>
+            </div>
+            <div>
+                <label>Sensor Value:</label>
+                <p>{{ sensorValue }}</p>
+            </div>
+            <div>
+                <label>Status:</label>
+                <p>{{ status }}</p>
+            </div>
+            <button type="button" @click="goDown">Go Down</button>
+            <button type="button" @click="retract">Retract</button>
+            <button type="submit">Submit</button>
+        </form>
+    </div>
+    <script>
+        new Vue({
+            el: '#app',
+            data: {
+                sessionName: '',
+                threshold: '',
+                session_id: '',
+                numberOfPenetrations: 0,
+                numberOfTurns: 0,
+                sensorValue: 0,
+                status: 'NO-GO'
+            },
+            methods: {
+                submitForm() {
+                    fetch('/submit', {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json'
+                        },
+                        body: JSON.stringify({
+                            sessionName: this.sessionName,
+                            threshold: this.threshold
+                        })
+                    })
+                    .then(response => response.json())
+                    .then(data => {
+                        console.log('Form submitted successfully');
+                        this.session_id = data.session_id;
+                    })
+                    .catch(error => {
+                        console.error('Error:', error);
+                    });
+                },
+                goDown() {
+                    fetch('/go_down', {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json'
+                        },
+                        body: JSON.stringify({
+                            session_id: this.session_id
+                        })
+                    })
+                    .then(response => response.json())
+                    .then(data => {
+                        this.numberOfTurns = data.numberOfTurns;
+                        this.sensorValue = data.sensorValue;
+                        this.status = data.status;
+                        if (this.sensorValue >= this.threshold) {
+                            this.retract();
+                        }
+                    })
+                    .catch(error => {
+                        console.error('Error:', error);
+                    });
+                },
+                retract() {
+                    fetch('/retract', {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json'
+                        },
+                        body: JSON.stringify({
+                            session_id: this.session_id
+                        })
+                    })
+                    .then(response => response.json())
+                    .then(data => {
+                        this.numberOfPenetrations = data.numberOfPenetrations;
+                        this.numberOfTurns = data.numberOfTurns;
+                        this.status = data.status;
+                    })
+                    .catch(error => {
+                        console.error('Error:', error);
+                    });
+                }
+            }
+        });
+    </script>
+</body>
+</html>

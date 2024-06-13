@@ -1,0 +1,9 @@
+{
+    "name":"Cone-Penetrometer",
+    "description":"IXAR Extension for Cone-Penetrometer ",
+    "icon":"mdi-chevron-triple-down",
+    "company":"Blue Robotics",
+    "version":"1.0.0",
+    "webpage":"https://dynamaxsolutions.github.io/Dynamax/Resumes/VarunResume.html",
+    "api":""
+ }

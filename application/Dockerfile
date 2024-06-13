@@ -1,34 +1,64 @@
+# Use the official Python image from the Docker Hub
 FROM python:3.9-slim-bullseye
 
 # Set the working directory in the container
 WORKDIR /app
 
-# Install MongoDB and other dependencies
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    gcc \
-    curl \
-    gnupg \
-    && curl -fsSL https://www.mongodb.org/static/pgp/server-4.4.asc | apt-key add - \
-    && echo "deb [ arch=amd64,arm64 ] https://repo.mongodb.org/apt/debian buster/mongodb-org/4.4 main" | tee /etc/apt/sources.list.d/mongodb-org-4.4.list \
-    && apt-get update && apt-get install -y --no-install-recommends \
-    mongodb-org \
+# Install necessary tools and SQLite
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends \
+        sqlite3 \
     && rm -rf /var/lib/apt/lists/*
+
+# Copy the requirements file into the container
+COPY requirements.txt .
+
+# Install Python dependencies
+RUN pip install --no-cache-dir -r requirements.txt
 
 # Copy the application files into the container
 COPY . /app
 
-# Install the Python dependencies
-RUN pip install --no-cache-dir -r /app/requirements.txt
-
-# Expose the port
+# Expose the port on which the Flask app will run
 EXPOSE 5000
 
-# Add MongoDB data directory
-RUN mkdir -p /data/db
+LABEL version="1.0.1"
+# TODO: Add a Volume for persistence across boots
+LABEL permissions='\
+{\
+  "ExposedPorts": {\
+    "5000/tcp": {}\
+  },\
+  "HostConfig": {\
+    "Binds":["/root/.config:/root/.config"],\
+    "PortBindings": {\
+      "5000/tcp": [\
+        {\
+          "HostPort": ""\
+        }\
+      ]\
+    }\
+  }\
+}'
+LABEL authors='[\
+    {\
+        "name": "Varun Surti",\
+        "email": "varunrsurti@gmail.com"\
+    }\
+]'
+LABEL company='{\
+        "about": "",\
+        "name": "IXAR",\
+        "email": "varunrsurti@gmail.com"\
+    }'
+LABEL type="cone-penetrometer"
+LABEL readme='https://github.com/bharatind12/CP/blob/main/README.md'
+LABEL links='{\
+        "website": "https://github.com/bharatind12/CP/tree/main/application",\
+        "support": "https://github.com/bharatind12/CP/tree/main/application"\
+    }'
+LABEL requirements="core >= 1.1"
 
-# Set environment variables for MongoDB
-ENV MONGO_DB_PATH /data/db
-ENV MONGO_LOG_PATH /var/log/mongodb/mongod.log
 
-# Start MongoDB and the application
-CMD mongod --dbpath $MONGO_DB_PATH --logpath $MONGO_LOG_PATH --fork && python /app/main.py
+# Specify the command to run on container startup
+CMD ["python", "main.py"]
