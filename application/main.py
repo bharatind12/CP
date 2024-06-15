@@ -1,4 +1,4 @@
-from flask import Flask, render_template, request, jsonify
+from flask import Flask, send_from_directory, request, jsonify
 from sqlalchemy import create_engine, Column, Integer, String
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker
@@ -39,15 +39,9 @@ def send_command_to_arduino(command):
     response = arduino.readline().decode().strip()
     return response
 
-app.mount("/", StaticFiles(directory="static",html = True), name="static")
-
-@app.get("/", response_class=FileResponse)
-async def root() -> Any:
-        return "index.html"
-
 @app.route('/')
 def home():
-    return render_template('index.html')
+    return send_from_directory('static', 'index.html')
 
 @app.route('/submit', methods=['POST'])
 def submit_form():
