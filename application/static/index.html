@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Simple Vue.js Form</title>
+    <title>Cone-Penetrometer Form</title>
     <script src="https://cdn.jsdelivr.net/npm/vue@2.6.14/dist/vue.js"></script>
     <style>
         body {
@@ -64,6 +64,7 @@
             <button type="submit">Submit</button>
         </form>
     </div>
+
     <script>
         new Vue({
             el: '#app',
@@ -78,41 +79,39 @@
             },
             methods: {
                 submitForm() {
-                    fetch('/submit', {
+                    fetch('/v1.0/submit', {
                         method: 'POST',
                         headers: {
                             'Content-Type': 'application/json'
                         },
                         body: JSON.stringify({
                             sessionName: this.sessionName,
-                            threshold: this.threshold
+                            threshold: parseInt(this.threshold)
                         })
                     })
                     .then(response => response.json())
                     .then(data => {
                         console.log('Form submitted successfully');
-                        this.session_id = data.session_id;
+                        this.session_id = data.id;
                     })
                     .catch(error => {
                         console.error('Error:', error);
                     });
                 },
                 goDown() {
-                    fetch('/go_down', {
+                    fetch('/v1.0/go_down', {
                         method: 'POST',
                         headers: {
                             'Content-Type': 'application/json'
                         },
-                        body: JSON.stringify({
-                            session_id: this.session_id
-                        })
+                        body: JSON.stringify({session_id: parseInt(this.session_id)})
                     })
                     .then(response => response.json())
                     .then(data => {
                         this.numberOfTurns = data.numberOfTurns;
                         this.sensorValue = data.sensorValue;
                         this.status = data.status;
-                        if (this.sensorValue >= this.threshold) {
+                        if (this.sensorValue >= parseInt(this.threshold)) {
                             this.retract();
                         }
                     })
@@ -121,14 +120,12 @@
                     });
                 },
                 retract() {
-                    fetch('/retract', {
+                    fetch('/v1.0/retract', {
                         method: 'POST',
                         headers: {
                             'Content-Type': 'application/json'
                         },
-                        body: JSON.stringify({
-                            session_id: this.session_id
-                        })
+                        body: JSON.stringify({session_id: parseInt(this.session_id)})
                     })
                     .then(response => response.json())
                     .then(data => {
@@ -142,6 +139,28 @@
                 }
             }
         });
+        
+        // Function to continuously update sensor value and status
+        function updateSensorAndStatus() {
+            fetch('/v1.0/sensor_value', {
+                method: 'GET',
+                headers: {
+                    'Content-Type': 'application/json'
+                }
+            })
+            .then(response => response.json())
+            .then(data => {
+                app.sensorValue = data.sensorValue;
+                app.status = data.status;
+            })
+            .catch(error => {
+                console.error('Error:', error);
+            });
+
+            setTimeout(updateSensorAndStatus, 1000); // Update every 1 second
+        }
+
+        updateSensorAndStatus(); // Start updating sensor value and status
     </script>
 </body>
 </html>

@@ -1,0 +1,9 @@
+{
+    "name":"Cone-Penetrometer",
+    "description":"Extension developed by IXAR Robotics",
+    "icon":"mdi-chevron-triple-down",
+    "company":"Ixar Robotics",
+    "version":"1.0.0",
+    "webpage":"https://example.com",
+    "api":""
+ }

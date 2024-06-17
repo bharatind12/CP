@@ -1,3 +1,4 @@
+
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -155,7 +156,6 @@
     </style>
 </head>
 <body>
-   
     <div class="form-container" id="app">
         <div class="image-container">
             <img src="image.png" alt="Image">
@@ -167,7 +167,7 @@
             </div>
             <div>
                 <label for="threshold">Threshold Pressure Value:</label>
-                <input type="number" id="threshold" v-model="threshold" required>
+                <input type="number" id="threshold" v-model.number="threshold" required>
             </div>
             <div class="submit-container">
                 <button type="submit" class="submit">Submit</button>
@@ -206,8 +206,8 @@
             el: '#app',
             data: {
                 sessionName: '',
-                threshold: '',
-                session_id: '',
+                threshold: null,
+                session_id: null,
                 numberOfPenetrations: 0,
                 numberOfTurns: 0,
                 sensorValue: 0,
@@ -215,7 +215,7 @@
             },
             methods: {
                 submitForm() {
-                    fetch('/v1.0/submit', {
+                    fetch('/submit', {
                         method: 'POST',
                         headers: {
                             'Content-Type': 'application/json'
@@ -235,50 +235,50 @@
                     });
                 },
                 goDown() {
-                    fetch('/v1.0/go_down', {
-                        method: 'POST',
-                        headers: {
-                            'Content-Type': 'application/json'
-                        },
-                        body: JSON.stringify({session_id: parseInt(this.session_id)})
-                    })
-
-                    .then((response) => {
-                        console.log(response,response.json())
-                        return response.json()})
-                    .then(data => {
-                        this.numberOfTurns = data.numberOfTurns;
-                        this.sensorValue = data.sensorValue;
-                        this.status = data.status;
-                        if (this.sensorValue >= parseInt(this.threshold)) {
-                            this.retract();
-                        }
-                    })
-                    .catch(error => {
-                        console.error('Error:', error);
-                    });
-                    
+                    if (this.session_id !== null) {
+                        fetch('/go_down', {
+                            method: 'POST',
+                            headers: {
+                                'Content-Type': 'application/json'
+                            },
+                            body: JSON.stringify({ session_id: parseInt(this.session_id) })
+                        })
+                        .then(response => response.json())
+                        .then(data => {
+                            this.numberOfTurns = data.numberOfTurns;
+                            this.sensorValue = data.sensorValue;
+                            this.status = data.status;
+                            if (this.sensorValue >= parseInt(this.threshold)) {
+                                this.retract();
+                            }
+                        })
+                        .catch(error => {
+                            console.error('Error:', error);
+                        });
+                    }
                 },
                 retract() {
-                    fetch('/v1.0/retract', {
-                        method: 'POST',
-                        headers: {
-                            'Content-Type': 'application/json'
-                        },
-                        body: JSON.stringify({session_id: parseInt(this.session_id)})
-                    })
-                    .then(response => response.json())
-                    .then(data => {
-                        this.numberOfPenetrations = data.numberOfPenetrations;
-                        this.numberOfTurns = data.numberOfTurns;
-                        this.status = data.status;
-                    })
-                    .catch(error => {
-                        console.error('Error:', error);
-                    });
+                    if (this.session_id !== null) {
+                        fetch('/retract', {
+                            method: 'POST',
+                            headers: {
+                                'Content-Type': 'application/json'
+                            },
+                            body: JSON.stringify({ session_id: parseInt(this.session_id) })
+                        })
+                        .then(response => response.json())
+                        .then(data => {
+                            this.numberOfPenetrations = data.numberOfPenetrations;
+                            this.numberOfTurns = data.numberOfTurns;
+                            this.status = data.status;
+                        })
+                        .catch(error => {
+                            console.error('Error:', error);
+                        });
+                    }
                 },
                 updateSensorAndStatus() {
-                    fetch('/v1.0/sensor_value', {
+                    fetch('/sensor_value', {
                         method: 'GET',
                         headers: {
                             'Content-Type': 'application/json'
@@ -293,11 +293,13 @@
                         console.error('Error:', error);
                     });
 
-                    setTimeout(this.updateSensorAndStatus, 1200);
+                    setTimeout(() => {
+                        this.updateSensorAndStatus();
+                    }, 1000);
                 },
                 refresh() {
                     this.sessionName = '';
-                    this.threshold = '';
+                    this.threshold = null;
                 }
             },
             mounted() {

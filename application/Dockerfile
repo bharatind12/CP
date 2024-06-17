@@ -2,7 +2,7 @@
 FROM python:3.9-slim-bullseye
 
 # Set the working directory in the container
-WORKDIR /app
+WORKDIR .
 
 # Install necessary tools and SQLite
 RUN apt-get update \
@@ -17,7 +17,7 @@ COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
 # Copy the application files into the container
-COPY . /app
+COPY . .
 
 # Expose the port on which the Flask app will run
 EXPOSE 5000
