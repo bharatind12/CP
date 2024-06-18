@@ -20,8 +20,6 @@
             min-height: 100vh;
             background-color: #e8f0fe;
             margin: 0;
-            overflow: hidden;
-            height: 100%;
         }
         .form-container {
             width: 100%;
@@ -243,10 +241,11 @@
                         body: JSON.stringify({session_id: parseInt(this.session_id)})
                     })
                     .then(response => response.json())
-                    .then(data => {
-                        // this.numberOfTurns = data.numberOfTurns;
-                        this.sensorValue = data.sensorValue;
+                        .then(data => {
+                        // this.sensorValue = data.sensorValue;
+                        console.log("GO_DOWN", this.sensorValue)
                         this.status = data.status;
+                        // this.updateSensorAndStatus()
                         if (this.sensorValue >= parseInt(this.threshold)) {
                             this.retract();
                         }
@@ -266,7 +265,7 @@
                     .then(response => response.json())
                     .then(data => {
                         this.numberOfPenetrations = data.numberOfPenetrations;
-                        this.distance = (int(data.steps)*0.025)+" mm";
+                        this.distance = (parseInt(data.steps) * 0.025) + " mm";
                         this.status = data.status;
                     })
                     .catch(error => {
@@ -285,6 +284,7 @@
                         console.log('Fetched sensor value:', data.sensorValue);
                         this.sensorValue = data.sensorValue;
                         this.status = data.status;
+                        console.log("GO_UP", this.sensorValue)
                     })
                     .catch(error => {
                         console.error('Error:', error);
@@ -299,27 +299,30 @@
                             'Content-Type': 'application/json'
                         }
                     })
-                    .then(response => {
-                        if (response.ok) {
-                            console.log('Session closed successfully');
-                            this.session_id = '';  // Reset session_id
-                            this.sessionName = '';  // Reset sessionName
-                            this.threshold = '';  // Reset threshold
-                            this.numberOfPenetrations = 0;  // Reset other variables as needed
-                            this.distance = 0;
-                            this.sensorValue = 0;
-                            this.status = 'NO-GO';
-                        } else {
-                            console.error('Failed to close session');
-                        }
-                    })
-                    .catch(error => {
-                        console.error('Error:', error);
-                    });
+                        .then(response => {
+                            if (response.ok) {
+                                console.log('Session closed successfully');
+                                this.session_id = '';  // Reset session_id
+                                this.sessionName = '';  // Reset sessionName
+                                this.threshold = '';  // Reset threshold
+                                this.numberOfPenetrations = 0;  // Reset other variables as needed
+                                this.distance = 0;
+                                this.sensorValue = 0;
+                                this.status = 'NO-GO';
+                            } else {
+                                console.error('Failed to close session');
+                            }
+                        })
+                        .catch(error => {
+                            console.error('Error:', error);
+                        });
                 }
+
             },
             mounted() {
-                this.updateSensorAndStatus(); // Start updating sensor and status
+                // if (this.session_id) {
+                    this.updateSensorAndStatus(); // Start updating sensor and status
+                // }
             }
         });
     </script>

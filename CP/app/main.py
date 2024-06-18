@@ -72,7 +72,7 @@ class Session(BaseModel):
     class Config:
         orm_mode = True
 
-def send_command_to_arduino(command):
+def send_command_to_arduino(command,  wait_for_response=True, retries=1):
     global arduino
     if arduino is None or not arduino.is_open:
         connect_to_arduino()
@@ -81,11 +81,19 @@ def send_command_to_arduino(command):
     
     try:
         arduino.write(command.encode())
+        if not wait_for_response:
+            return None  # Return immediately if not waiting for a response
+        
         time.sleep(1)  # Give Arduino time to process the command
-        response = arduino.readline().decode().strip()
-        if response == '':
-            raise serial.SerialException("No response from Arduino")
-        return response
+        
+        for _ in range(retries):
+            response = arduino.readline().decode().strip()
+            if response:
+                return response
+            time.sleep(0.5)  # Wait before retrying
+        
+        raise serial.SerialException("No valid response from Arduino after retries")
+    
     except serial.SerialException as e:
         logging.error(f"Error communicating with Arduino: {e}")
         arduino.close()
@@ -105,6 +113,7 @@ def submit(request: SessionCreate):
         db.refresh(session)
         return Session.from_orm(session)
     except Exception as e:
+        
         db.rollback()
         raise e
     finally:
@@ -115,21 +124,23 @@ def get_sensor_value():
     db = SessionLocal()
     try:
         # Send command to Arduino to get sensor value
-        sensor_value = int(send_command_to_arduino("SENSOR_VALUE\n"))
+        response = send_command_to_arduino("SENSOR_VALUE\n")
+        sensor_value = int(response) if response.isdigit() else 0
         
         # Retrieve the session to update its sensor value and status
         session = db.query(SessionData).first()  # Assuming there is one active session
         if session:
             session.sensorValue = sensor_value
-            # Update status based on sensor value
             session.status = 'GO-GO' if session.sensorValue >= session.threshold else 'NO-GO'
-            
             db.commit()
             db.refresh(session)
             return Session.from_orm(session)
         else:
             raise HTTPException(status_code=404, detail="Session not found")
     except Exception as e:
+        ############################
+        raise HTTPException(status_code=500, detail=str(e))
+        ##################################
         db.rollback()
         raise e
     finally:
@@ -144,19 +155,21 @@ def retract(request: SessionRequest):
         
         if session is None:
             raise HTTPException(status_code=404, detail="Session not found")
+        #####################adding wait for response############################################
         
-        session.steps=int(send_command_to_arduino("RETRACT\n"))
+        steps = send_command_to_arduino("RETRACT\n",wait_for_response=False)
+        session.steps = int(steps) if steps.isdigit() else 0
         
         session.numberOfPenetrations += 1
-        if(session.steps==10000):
-           session.status = "NO-GO"
-        else:   
-            session.status = 'GO-GO'
+        session.status = "NO-GO" if session.steps == 10000 else 'GO-GO'
         
         db.commit()
         db.refresh(session)
         return Session.from_orm(session)
     except Exception as e:
+        ############################
+        raise HTTPException(status_code=500, detail=str(e))
+        ##################################
         db.rollback()
         raise e
     finally:
@@ -171,19 +184,23 @@ def go_down(request: SessionRequest):
         
         if session is None:
             raise HTTPException(status_code=404, detail="Session not found")
-        
-        send_command_to_arduino("GO_DOWN\n")  # Get sensor value from Arduino
-        session.sensorValue = int(send_command_to_arduino("SENSOR_VALUE\n"))
+        #####################adding wait for response############################################
+        send_command_to_arduino("GO_DOWN\n", wait_for_response=False)
+        ##############################
+        time.sleep(1)
+        ##################################
+          # Send command to Arduino to go down
+       # response = send_command_to_arduino("SENSOR_VALUE\n")
+       # session.sensorValue = int(response) if response.isdigit() else 0
         session.status = 'NO-GO'
-        
-        # if session.sensorValue >= session.threshold:
-        #     session.numberOfPenetrations += 1
-        #     session.status = 'GO-GO'
         
         db.commit()
         db.refresh(session)
         return Session.from_orm(session)
     except Exception as e:
+        ############################
+        raise HTTPException(status_code=500, detail=str(e))
+        ##################################
         db.rollback()
         raise e
     finally:
@@ -206,7 +223,6 @@ def close_session(request: SessionRequest):
         raise HTTPException(status_code=500, detail=str(e))
     finally:
         db.close()
-
 
 app = VersionedFastAPI(app, version="1.0.0", prefix_format="/v{major}.{minor}", enable_latest=True)
 
