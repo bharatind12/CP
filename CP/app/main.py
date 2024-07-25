@@ -1,4 +1,4 @@
-from fastapi import FastAPI, HTTPException, Depends, status
+from fastapi import FastAPI, HTTPException
 from fastapi.responses import HTMLResponse, FileResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi_versioning import VersionedFastAPI, version
@@ -6,15 +6,16 @@ from pydantic import BaseModel
 from sqlalchemy import create_engine, Column, Integer, String
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker
-
-import time
 import serial
-import logging
+import time
+import re
+import threading
+import queue
 
 # FastAPI application instance
 app = FastAPI(
-    title="Example Extension 4 API",
-    description="API for an example extension that saves/loads data as files.",
+    title="Cone Penetrometer API",
+    description="API for cone penetrometer operations.",
 )
 
 # SQLite configuration
@@ -31,74 +32,123 @@ class SessionData(Base):
     sessionName = Column(String)
     threshold = Column(Integer)
     numberOfPenetrations = Column(Integer, default=0)
-    steps = Column(Integer, default=0)
     sensorValue = Column(Integer, default=0)
     status = Column(String, default='NO-GO')
+    steps = Column(Integer, default=0)
 
-Base.metadata.create_all(engine)
-
-# Serial configuration
-arduino = None
-serial_port = '/dev/ttyACM0'
-baud_rate = 9600
-
-def connect_to_arduino():
-    global arduino
-    try:
-        arduino = serial.Serial(serial_port, baud_rate, timeout=1)
-        time.sleep(2)  # Wait for the serial connection to initialize
-    except serial.SerialException as e:
-        logging.error(f"Error connecting to Arduino: {e}")
-        arduino = None
-
-connect_to_arduino()
+Base.metadata.create_all(bind=engine)
 
 class SessionCreate(BaseModel):
     sessionName: str
     threshold: int
-
-class SessionRequest(BaseModel):
-    session_id: int
 
 class Session(BaseModel):
     id: int
     sessionName: str
     threshold: int
     numberOfPenetrations: int
-    steps: int
     sensorValue: int
     status: str
+    steps:int
 
     class Config:
         orm_mode = True
 
-def send_command_to_arduino(command,  wait_for_response=True, retries=1):
+class SessionRequest(BaseModel):
+    session_id: int
+
+# Arduino setup
+arduino = None
+serial_port = '/dev/cone_penetrometer'
+baud_rate = 9600
+arduino_lock = threading.Lock()
+command_queue = queue.Queue()
+response_queue = queue.Queue()
+
+# Cached sensor value
+cached_sensor_value = 0
+cache_lock = threading.Lock()
+
+def connect_to_arduino():
     global arduino
-    if arduino is None or not arduino.is_open:
-        connect_to_arduino()
+    retries = 5
+    delay = 2
+
+    for attempt in range(retries):
+        try:
+            arduino = serial.Serial(serial_port, baud_rate, timeout=1)
+            time.sleep(1)  # Wait for the serial connection to initialize
+            print("Connected to Arduino on /dev/cone_penetrometer")
+            return
+        except serial.SerialException as e:
+            print(f"Attempt {attempt + 1}/{retries} - Error connecting to Arduino: {e}")
+            arduino = None
+            if attempt < retries - 1:
+                print(f"Retrying in {delay} seconds...")
+                time.sleep(delay)
+
+    raise HTTPException(status_code=500, detail="No Arduino found on /dev/cone_penetrometer")
+
+def send_command_to_arduino(command, wait_for_response=True):
+    global arduino
+    with arduino_lock:
+        if arduino is None or not arduino.is_open:
+            connect_to_arduino()
         if arduino is None:
             raise HTTPException(status_code=500, detail="Failed to connect to Arduino")
-    
-    try:
-        arduino.write(command.encode())
-        if not wait_for_response:
-            return None  # Return immediately if not waiting for a response
-        
-        time.sleep(1)  # Give Arduino time to process the command
-        
-        for _ in range(retries):
+
+        try:
+            arduino.write(command.encode())
+            if not wait_for_response:
+                return None
+
+            time.sleep(0.1)  # Reduced wait time
             response = arduino.readline().decode().strip()
-            if response:
-                return response
-            time.sleep(0.5)  # Wait before retrying
-        
-        raise serial.SerialException("No valid response from Arduino after retries")
-    
-    except serial.SerialException as e:
-        logging.error(f"Error communicating with Arduino: {e}")
-        arduino.close()
-        arduino = None
-        raise HTTPException(status_code=500, detail="Error communicating with Arduino")
+            return response
+        except serial.SerialException as e:
+            print(f"Error communicating with Arduino: {e}")
+            arduino.close()
+            arduino = None
+            raise HTTPException(status_code=500, detail="Error communicating with Arduino")
+
+def parse_sensor_value(response):
+    match = re.search(r'\b([2-9]\d{2}|999)\b', response)
+    if match:
+        return int(match.group(1))
+    raise ValueError("Invalid sensor value received")
+
+def arduino_command_worker():
+    while True:
+        command = command_queue.get()
+        try:
+            if "RETRACT" in command:
+                response = send_command_to_arduino(command, wait_for_response=True)
+                response_queue.put(response)
+            else:
+                # Handle other commands as needed
+                send_command_to_arduino(command, wait_for_response=False)
+        except Exception as e:
+            print(f"Error executing Arduino command: {e}")
+            if "RETRACT" in command:
+                response_queue.put(None)  # Put None in case of error
+        command_queue.task_done()
+
+def continuous_sensor_reading():
+    global cached_sensor_value
+    while True:
+        try:
+            response = send_command_to_arduino("SENSOR_VALUE\n")
+            sensor_value = parse_sensor_value(response)
+            with cache_lock:
+                cached_sensor_value = sensor_value
+            time.sleep(0.1)  # Read sensor value every 100ms
+        except Exception as e:
+            print(f"Error reading sensor value: {e}")
+            time.sleep(1)  # Wait before retrying on error
+
+# Start background threads
+threading.Thread(target=arduino_command_worker, daemon=True).start()
+threading.Thread(target=continuous_sensor_reading, daemon=True).start()
 
 @app.post("/submit", response_model=Session)
 def submit(request: SessionCreate):
@@ -113,102 +163,13 @@ def submit(request: SessionCreate):
         db.refresh(session)
         return Session.from_orm(session)
     except Exception as e:
-        
         db.rollback()
-        raise e
-    finally:
-        db.close()
-
-@app.get("/sensor_value", response_model=Session)
-def get_sensor_value():
-    db = SessionLocal()
-    try:
-        # Send command to Arduino to get sensor value
-        response = send_command_to_arduino("SENSOR_VALUE\n")
-        sensor_value = int(response) if response.isdigit() else 0
-        
-        # Retrieve the session to update its sensor value and status
-        session = db.query(SessionData).first()  # Assuming there is one active session
-        if session:
-            session.sensorValue = sensor_value
-            session.status = 'GO-GO' if session.sensorValue >= session.threshold else 'NO-GO'
-            db.commit()
-            db.refresh(session)
-            return Session.from_orm(session)
-        else:
-            raise HTTPException(status_code=404, detail="Session not found")
-    except Exception as e:
-        ############################
         raise HTTPException(status_code=500, detail=str(e))
-        ##################################
-        db.rollback()
-        raise e
-    finally:
-        db.close()
-
-@app.post("/retract", response_model=Session)
-def retract(request: SessionRequest):
-    session_id = request.session_id
-    db = SessionLocal()
-    try:
-        session = db.query(SessionData).filter(SessionData.id == session_id).first()
-        
-        if session is None:
-            raise HTTPException(status_code=404, detail="Session not found")
-        #####################adding wait for response############################################
-        
-        steps = send_command_to_arduino("RETRACT\n",wait_for_response=False)
-        session.steps = int(steps) if steps.isdigit() else 0
-        
-        session.numberOfPenetrations += 1
-        session.status = "NO-GO" if session.steps == 10000 else 'GO-GO'
-        
-        db.commit()
-        db.refresh(session)
-        return Session.from_orm(session)
-    except Exception as e:
-        ############################
-        raise HTTPException(status_code=500, detail=str(e))
-        ##################################
-        db.rollback()
-        raise e
-    finally:
-        db.close()
-
-@app.post("/go_down", response_model=Session)
-def go_down(request: SessionRequest):
-    session_id = request.session_id
-    db = SessionLocal()
-    try:
-        session = db.query(SessionData).filter(SessionData.id == session_id).first()
-        
-        if session is None:
-            raise HTTPException(status_code=404, detail="Session not found")
-        #####################adding wait for response############################################
-        send_command_to_arduino("GO_DOWN\n", wait_for_response=False)
-        ##############################
-        time.sleep(1)
-        ##################################
-          # Send command to Arduino to go down
-       # response = send_command_to_arduino("SENSOR_VALUE\n")
-       # session.sensorValue = int(response) if response.isdigit() else 0
-        session.status = 'NO-GO'
-        
-        db.commit()
-        db.refresh(session)
-        return Session.from_orm(session)
-    except Exception as e:
-        ############################
-        raise HTTPException(status_code=500, detail=str(e))
-        ##################################
-        db.rollback()
-        raise e
     finally:
         db.close()
 
 @app.delete("/close_session/{session_id}")
-def close_session(request: SessionRequest):
-    session_id = request.session_id
+def close_session(session_id: int):
     db = SessionLocal()
     try:
         session = db.query(SessionData).filter(SessionData.id == session_id).first()
@@ -218,6 +179,95 @@ def close_session(request: SessionRequest):
             return {"message": "Session closed successfully"}
         else:
             raise HTTPException(status_code=404, detail="Session not found")
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(status_code=500, detail=str(e))
+    finally:
+        db.close()
+
+@app.get("/sensor_value")
+def get_sensor_value():
+    db = SessionLocal()
+    try:
+        with cache_lock:
+            sensor_value = cached_sensor_value
+        
+        session = db.query(SessionData).first()
+        if session:
+            session.sensorValue = sensor_value
+            db.commit()
+            db.refresh(session)
+            return {"sensorValue": session.sensorValue, "status": session.status}
+        else:
+            raise HTTPException(status_code=404, detail="Session not found")
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+    finally:
+        db.close()
+
+@app.post("/go_down")
+def go_down(request: SessionRequest):
+    db = SessionLocal()
+    try:
+        session = db.query(SessionData).filter(SessionData.id == request.session_id).first()
+        if not session:
+            raise HTTPException(status_code=404, detail="Session not found")
+        
+        command_queue.put("GO_DOWN\n")
+        session.status = 'NO-GO'
+        session.numberOfPenetrations += 1
+        db.commit()
+        return {
+            "numberOfPenetrations": session.numberOfPenetrations,
+            "status": session.status
+            }
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(status_code=500, detail=str(e))
+    finally:
+        db.close()
+
+@app.post("/retract")
+def retract(request: SessionRequest):
+    db = SessionLocal()
+    try:
+        session = db.query(SessionData).filter(SessionData.id == request.session_id).first()
+        if not session:
+            raise HTTPException(status_code=404, detail="Session not found")
+        
+        command_queue.put("RETRACT\n")
+        
+        # Wait for the response with a timeout
+        try:
+            response = response_queue.get(timeout=5)  # 5 second timeout
+            if response is None:
+                raise HTTPException(status_code=500, detail="Error communicating with Arduino")
+            
+            print("Arduino response:", response)
+            
+            # Parse the response to get the number of steps
+            try:
+                steps = int(response)
+                session.steps = steps
+                print("Steps:", steps)
+            except ValueError:
+                print("Invalid response from Arduino")
+                steps = 0
+            
+            # Calculate distance
+            distance = int(steps * 0.025)
+            print("Distance:", distance)
+            
+        except queue.Empty:
+            raise HTTPException(status_code=504, detail="Timeout waiting for Arduino response")
+        session.status = 'GO-GO'
+        
+        db.commit()
+        return {
+            "status": session.status,
+            "steps": steps,
+            "distance": distance
+        }
     except Exception as e:
         db.rollback()
         raise HTTPException(status_code=500, detail=str(e))

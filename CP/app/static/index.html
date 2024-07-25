@@ -54,7 +54,7 @@
         }
         button {
             margin-top: 12px;
-            padding: 12px 18px; /* Adjusted padding for the refresh button */
+            padding: 12px 18px;
             color: white;
             border: none;
             border-radius: 10px;
@@ -88,7 +88,7 @@
         }
         button.refresh {
             background-color: #17a2b8;
-            padding: 12px 18px; /* Adjusted padding for the refresh button */
+            padding: 12px 18px;
             display: flex;
             align-items: center;
             justify-content: center;
@@ -100,7 +100,7 @@
             background-color: #138496;
         }
         .row {
-            margin-top: 8px;
+            margin-top: 0px;
             display: flex;
             justify-content: space-between;
             width: 100%;
@@ -150,6 +150,17 @@
             border: none;
             border-top: 1px solid #cccccc;
         }
+        .status-text {
+    font-weight: bold;
+}
+
+.go-go {
+    color: green;
+}
+
+.no-go {
+    color: red;
+}
     </style>
 </head>
 <body>
@@ -189,7 +200,7 @@
                 </div>
                 <div class="status-container">
                     <label>Status:</label>
-                    <p>{{ status }}</p>
+                    <p class="status-text" :class="{ 'go-go': status === 'GO-GO', 'no-go': status === 'NO-GO' }">{{ status }}</p>
                 </div>
             </div>
             <div class="button-container">
@@ -207,9 +218,10 @@
                 threshold: '',
                 session_id: '',
                 numberOfPenetrations: 0,
-                distance: 0,
                 sensorValue: 0,
-                status: 'NO-GO'
+                status: 'NO-GO',
+                sensorUpdateInterval: null,
+                distance: "0 mm"
             },
             methods: {
                 submitForm() {
@@ -223,13 +235,19 @@
                             threshold: parseInt(this.threshold)
                         })
                     })
-                    .then(response => response.json())
+                    .then(response => {
+                        if (!response.ok) {
+                            throw new Error(`HTTP error! status: ${response.status}`);
+                        }
+                        return response.json();
+                    })
                     .then(data => {
                         console.log('Form submitted successfully');
                         this.session_id = data.id;
+                        this.sensorUpdateInterval = setInterval(this.updateSensorAndStatus, 900);
                     })
                     .catch(error => {
-                        console.error('Error:', error);
+                        this.handleApiError(error, 'Error submitting form:');
                     });
                 },
                 goDown() {
@@ -240,19 +258,24 @@
                         },
                         body: JSON.stringify({session_id: parseInt(this.session_id)})
                     })
-                    .then(response => response.json())
-                        .then(data => {
-                        // this.sensorValue = data.sensorValue;
-                        console.log("GO_DOWN", this.sensorValue)
+                    .then(response => {
+                        if (!response.ok) {
+                            throw new Error(`HTTP error! status: ${response.status}`);
+                        }
+                        return response.json();
+                    })
+                    .then(data => {
+                        console.log("GO_DOWN", this.sensorValue);
                         this.status = data.status;
-                        // this.updateSensorAndStatus()
+                        this.numberOfPenetrations = data.numberOfPenetrations;
                         if (this.sensorValue >= parseInt(this.threshold)) {
-                            this.retract();
+                            this.retract(); // Automatically retract when sensor value exceeds threshold
                         }
                     })
                     .catch(error => {
-                        console.error('Error:', error);
+                        this.handleApiError(error, 'Error during GO_DOWN operation:');
                     });
+                    this.distance = "0 mm" ;  
                 },
                 retract() {
                     fetch('/v1.0/retract', {
@@ -262,35 +285,45 @@
                         },
                         body: JSON.stringify({session_id: parseInt(this.session_id)})
                     })
-                    .then(response => response.json())
+                    .then(response => {
+                        if (!response.ok) {
+                            throw new Error(`HTTP error! status: ${response.status}`);
+                        }
+                        return response.json();
+                    })
                     .then(data => {
-                        this.numberOfPenetrations = data.numberOfPenetrations;
-                        this.distance = (parseInt(data.steps) * 0.025) + " mm";
+                        
                         this.status = data.status;
+                        this.distance = `${data.distance} mm`;
                     })
                     .catch(error => {
-                        console.error('Error:', error);
+                        this.handleApiError(error, 'Error during retract operation:');
                     });
                 },
                 updateSensorAndStatus() {
-                    fetch('/v1.0/sensor_value', {
+                    fetch(`/v1.0/sensor_value?session_id=${this.session_id}`, {
                         method: 'GET',
                         headers: {
                             'Content-Type': 'application/json'
                         }
                     })
-                    .then(response => response.json())
+                    .then(response => {
+                        if (!response.ok) {
+                            throw new Error(`HTTP error! status: ${response.status}`);
+                        }
+                        return response.json();
+                    })
                     .then(data => {
                         console.log('Fetched sensor value:', data.sensorValue);
                         this.sensorValue = data.sensorValue;
-                        this.status = data.status;
-                        console.log("GO_UP", this.sensorValue)
+                        // this.status = data.status;
+                        // if (this.sensorValue >= parseInt(this.threshold)) {
+                        //     this.retract(); // Automatically retract when sensor value exceeds threshold
+                        // }
                     })
                     .catch(error => {
-                        console.error('Error:', error);
+                        this.handleApiError(error, 'Error updating sensor value:');
                     });
-    
-                    setTimeout(this.updateSensorAndStatus, 1200);
                 },
                 refresh() {
                     fetch(`/v1.0/close_session/${this.session_id}`, {
@@ -299,33 +332,40 @@
                             'Content-Type': 'application/json'
                         }
                     })
-                        .then(response => {
-                            if (response.ok) {
-                                console.log('Session closed successfully');
-                                this.session_id = '';  // Reset session_id
-                                this.sessionName = '';  // Reset sessionName
-                                this.threshold = '';  // Reset threshold
-                                this.numberOfPenetrations = 0;  // Reset other variables as needed
-                                this.distance = 0;
-                                this.sensorValue = 0;
-                                this.status = 'NO-GO';
-                            } else {
-                                console.error('Failed to close session');
-                            }
-                        })
-                        .catch(error => {
-                            console.error('Error:', error);
-                        });
+                    .then(response => {
+                        if (!response.ok) {
+                            throw new Error(`HTTP error! status: ${response.status}`);
+                        }
+                        return response.json();
+                    })
+                    .then(data => {
+                        console.log('Session closed successfully');
+                        // Clear the interval when refreshing
+                        clearInterval(this.sensorUpdateInterval);
+                        // Reset variables
+                        this.session_id = '';
+                        this.sessionName = '';
+                        this.threshold = '';
+                        this.numberOfPenetrations = 0;
+                        this.sensorValue = 0;
+                        this.status = 'NO-GO';
+                        this.distance = "0 mm" ;
+                    })
+                    .catch(error => {
+                        this.handleApiError(error, 'Error closing session:');
+                    });
+                },
+                handleApiError(error, message) {
+                    console.error(message, error);
+                    // You can add code here to display an error message to the user
+                    // For example, using a toast notification or updating a status message in the UI
                 }
-
             },
             mounted() {
-                // if (this.session_id) {
-                    this.updateSensorAndStatus(); // Start updating sensor and status
-                // }
+                // No need for any setup here now, as we're using setInterval in submitForm
             }
         });
     </script>
-     
+   
 </body>
 </html>

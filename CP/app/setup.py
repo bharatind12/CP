@@ -24,6 +24,9 @@ setup(
         "aiofiles==0.8.0",
         "sqlalchemy==1.4.25",
         "pydantic==1.8.2",
-        "pyserial==3.5"
+        "pyserial==3.5",
+        "pyserial_asyncio==0.6",
+        "regex==2021.4.4",
+        "queuelib==1.7.0"
     ],
 )

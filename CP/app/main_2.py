@@ -108,32 +108,6 @@ def go_down(request: SessionRequest):
         db.refresh(session)
         return Session.from_orm(session)
 
-
-
-    
-
-# @app.post("/go_down", response_model=Session)
-# def go_down(session_id: int):
-#     session_id=request.session_id
-#     db = SessionLocal()
-#     session = db.query(SessionData).filter(SessionData.id == session_id).first()
-#     # print("Go Down session:" + session)
-#     if session is None:
-#         raise HTTPException(status_code=404, detail="Session not found")
-    
-#     session.numberOfTurns += 1
-#     # session.sensorValue = int(send_command_to_arduino("GO_DOWN\n"))  # Get sensor value from Arduino
-#     session.status = 'NO-GO'
-    
-#     # if session.sensorValue >= session.threshold:
-#     #     session.numberOfPenetrations += 1
-#     #     session.numberOfTurns = 0
-#     #     session.status = 'GO-GO'
-#     print(session)
-#     db.commit()
-#     db.refresh(session)
-#     return Session.from_orm(session)
-
 @app.post("/retract", response_model=Session)
 def retract(request: SessionRequest):
     session_id = request.session_id
